@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Monitoreo Comedor UNJ</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * {
             margin: 0;
@@ -135,6 +136,40 @@
             font-style: italic;
         }
 
+        .chart-container {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin: 20px 0;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+        }
+
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .stat-label {
+            color: #7f8c8d;
+            margin-top: 5px;
+        }
+
         @media (max-width: 768px) {
             .horarios {
                 grid-template-columns: 1fr;
@@ -142,6 +177,10 @@
             
             .aforo-number {
                 font-size: 3em;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr;
             }
         }
     </style>
@@ -158,18 +197,40 @@
         <div class="status-section">
             <div class="aforo-display">
                 <h2>👥 AFORO ACTUAL</h2>
-                <div class="aforo-number">--</div>
-                <div class="aforo-total">de 100 personas</div>
+                <div class="aforo-number" id="aforoActual">--</div>
+                <div class="aforo-total" id="aforoTotal">de 100 personas</div>
                 
-                <div class="estado-badge vacio">VACÍO</div>
+                <div class="estado-badge" id="estadoBadge">VACÍO</div>
                 
-                <div class="tiempo-cola">
+                <div class="tiempo-cola" id="tiempoCola">
                     ⏰ Tiempo estimado de cola: -- minutos
                 </div>
                 
-                <div class="recomendacion">
+                <div class="recomendacion" id="recomendacion">
                     💡 <strong>RECOMENDACIÓN:</strong> El sistema se está inicializando...
                 </div>
+            </div>
+
+            <!-- Estadísticas rápidas -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-number" id="porcentajeOcupacion">--%</div>
+                    <div class="stat-label">Ocupación</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="personasRestantes">--</div>
+                    <div class="stat-label">Lugares disponibles</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="tasaEntrada">--/h</div>
+                    <div class="stat-label">Personas entrando</div>
+                </div>
+            </div>
+
+            <!-- Gráfico de aforo -->
+            <div class="chart-container">
+                <h3>📊 HISTÓRICO DE AFORO - HOY</h3>
+                <canvas id="aforoChart"></canvas>
             </div>
 
             <!-- Horarios -->
@@ -209,15 +270,222 @@
                 </div>
             </div>
 
-            <div class="last-update">
+            <div class="last-update" id="lastUpdate">
                 🔄 Sistema en configuración - Próximamente: Monitoreo en tiempo real
             </div>
         </div>
     </div>
 
     <script>
-        // Aquí irá el código JavaScript para el monitoreo en tiempo real
-        console.log("Sistema de monitoreo Comedor UNJ - Inicializado");
+        // =============================================
+        // SISTEMA DE SIMULACIÓN DE AFORO EN TIEMPO REAL
+        // =============================================
+
+        // Configuración del comedor
+        const config = {
+            capacidadMaxima: 100,
+            horarioPicoAlmuerzo: { inicio: 11, fin: 13 }, // 11 AM - 1 PM
+            horarioPicoCena: { inicio: 15, fin: 16 }      // 3 PM - 4 PM
+        };
+
+        // Estado actual del sistema
+        let estado = {
+            aforoActual: 0,
+            historico: [],
+            ultimaActualizacion: new Date(),
+            tasaEntrada: 0
+        };
+
+        // Elementos HTML
+        const elementos = {
+            aforoActual: document.getElementById('aforoActual'),
+            aforoTotal: document.getElementById('aforoTotal'),
+            estadoBadge: document.getElementById('estadoBadge'),
+            tiempoCola: document.getElementById('tiempoCola'),
+            recomendacion: document.getElementById('recomendacion'),
+            porcentajeOcupacion: document.getElementById('porcentajeOcupacion'),
+            personasRestantes: document.getElementById('personasRestantes'),
+            tasaEntrada: document.getElementById('tasaEntrada'),
+            lastUpdate: document.getElementById('lastUpdate')
+        };
+
+        // Inicializar gráfico
+        const ctx = document.getElementById('aforoChart').getContext('2d');
+        const aforoChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Personas en el comedor',
+                    data: [],
+                    borderColor: '#3498db',
+                    backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                    borderWidth: 3,
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Evolución del aforo durante el día'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: config.capacidadMaxima,
+                        title: {
+                            display: true,
+                            text: 'Personas'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Hora del día'
+                        }
+                    }
+                }
+            }
+        });
+
+        // Función para simular datos realistas según la hora
+        function simularAforoRealista() {
+            const ahora = new Date();
+            const hora = ahora.getHours();
+            const minutos = ahora.getMinutes();
+            const horaDecimal = hora + minutos / 60;
+
+            let aforoBase = 0;
+
+            // Simulación basada en horarios reales del comedor
+            if (horaDecimal >= 6.5 && horaDecimal <= 8.83) { // Desayuno
+                aforoBase = 20 + Math.sin((horaDecimal - 6.5) * 2) * 25;
+            } else if (horaDecimal >= 11 && horaDecimal <= 14.5) { // Almuerzo beneficiarios
+                if (horaDecimal >= 11 && horaDecimal <= 13) {
+                    // Hora pico almuerzo
+                    aforoBase = 40 + Math.sin((horaDecimal - 11) * 3) * 35;
+                } else {
+                    // Final del almuerzo
+                    aforoBase = 60 - (horaDecimal - 13) * 25;
+                }
+            } else if (horaDecimal >= 15.5 && horaDecimal <= 16.5) { // Cena beneficiarios
+                aforoBase = 30 + Math.sin((horaDecimal - 15.5) * 4) * 20;
+            } else if (horaDecimal >= 13.5 && horaDecimal <= 14) { // Almuerzo libres
+                aforoBase = Math.min(estado.aforoActual + 15, 80);
+            } else if (horaDecimal >= 16.5 && horaDecimal <= 17) { // Cena libres
+                aforoBase = Math.min(estado.aforoActual + 10, 70);
+            } else {
+                // Fuera de horarios - disminución gradual
+                aforoBase = Math.max(0, estado.aforoActual - 2);
+            }
+
+            // Agregar variación aleatoria realista
+            const variacion = (Math.random() - 0.5) * 10;
+            return Math.max(0, Math.min(config.capacidadMaxima, Math.round(aforoBase + variacion)));
+        }
+
+        // Función para calcular tiempo estimado de cola
+        function calcularTiempoCola(aforo) {
+            const porcentaje = (aforo / config.capacidadMaxima) * 100;
+            
+            if (porcentaje < 30) return "0-2";
+            if (porcentaje < 50) return "3-5";
+            if (porcentaje < 70) return "6-10";
+            if (porcentaje < 90) return "11-15";
+            return "15+";
+        }
+
+        // Función para generar recomendación
+        function generarRecomendacion(aforo) {
+            const porcentaje = (aforo / config.capacidadMaxima) * 100;
+            
+            if (porcentaje < 30) {
+                return "✅ <strong>CONDICIÓN IDEAL:</strong> Comedor vacío, puedes ir sin problemas";
+            } else if (porcentaje < 50) {
+                return "🟡 <strong>BUENA OPORTUNIDAD:</strong> Pocas personas, encontrarás lugar rápido";
+            } else if (porcentaje < 70) {
+                return "🟠 <strong>OCUPACIÓN MEDIA:</strong> Puedes ir, probablemente encuentres lugar";
+            } else if (porcentaje < 90) {
+                return "🔴 <strong>ALTA OCUPACIÓN:</strong> Considera esperar o ir en otro horario";
+            } else {
+                return "🚫 <strong>COMPLETAMENTE LLENO:</strong> Mejor espera a que salgan algunas personas";
+            }
+        }
+
+        // Función para actualizar la interfaz
+        function actualizarInterfaz() {
+            const ahora = new Date();
+            
+            // Simular nuevo aforo
+            estado.aforoActual = simularAforoRealista();
+            estado.ultimaActualizacion = ahora;
+            
+            // Calcular métricas
+            const porcentaje = Math.round((estado.aforoActual / config.capacidadMaxima) * 100);
+            const disponibles = config.capacidadMaxima - estado.aforoActual;
+            const tiempoCola = calcularTiempoCola(estado.aforoActual);
+            const recomendacion = generarRecomendacion(estado.aforoActual);
+            
+            // Actualizar elementos HTML
+            elementos.aforoActual.textContent = estado.aforoActual;
+            elementos.porcentajeOcupacion.textContent = `${porcentaje}%`;
+            elementos.personasRestantes.textContent = disponibles;
+            elementos.tasaEntrada.textContent = `${Math.round(estado.tasaEntrada)}/h`;
+            elementos.tiempoCola.textContent = `⏰ Tiempo estimado de cola: ${tiempoCola} minutos`;
+            elementos.recomendacion.innerHTML = recomendacion;
+            elementos.lastUpdate.textContent = `🔄 Actualizado: ${ahora.toLocaleTimeString()}`;
+            
+            // Actualizar badge de estado
+            elementos.estadoBadge.className = 'estado-badge ';
+            if (porcentaje < 40) {
+                elementos.estadoBadge.classList.add('vacio');
+                elementos.estadoBadge.textContent = 'VACÍO';
+            } else if (porcentaje < 75) {
+                elementos.estadoBadge.classList.add('medio');
+                elementos.estadoBadge.textContent = 'MEDIA OCUPACIÓN';
+            } else {
+                elementos.estadoBadge.classList.add('lleno');
+                elementos.estadoBadge.textContent = 'ALTO AFORO';
+            }
+            
+            // Actualizar histórico para el gráfico
+            const horaActual = ahora.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+            estado.historico.push({
+                hora: horaActual,
+                aforo: estado.aforoActual
+            });
+            
+            // Mantener solo últimos 20 puntos en el gráfico
+            if (estado.historico.length > 20) {
+                estado.historico.shift();
+            }
+            
+            // Actualizar gráfico
+            aforoChart.data.labels = estado.historico.map(item => item.hora);
+            aforoChart.data.datasets[0].data = estado.historico.map(item => item.aforo);
+            aforoChart.update();
+            
+            // Simular tasa de entrada (personas por hora)
+            estado.tasaEntrada = Math.max(0, 30 + (Math.random() - 0.5) * 20);
+        }
+
+        // Inicializar sistema
+        function inicializarSistema() {
+            // Primera actualización inmediata
+            actualizarInterfaz();
+            
+            // Actualizar cada 5 segundos (simulación en tiempo real)
+            setInterval(actualizarInterfaz, 5000);
+            
+            console.log("✅ Sistema de monitoreo Comedor UNJ - Inicializado y funcionando");
+        }
+
+        // Iniciar cuando la página cargue
+        document.addEventListener('DOMContentLoaded', inicializarSistema);
     </script>
 </body>
 </html>
