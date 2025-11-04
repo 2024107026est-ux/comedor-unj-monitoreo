@@ -275,25 +275,26 @@
             </div>
         </div>
     </div>
-
     <script>
         // =============================================
-        // SISTEMA DE SIMULACIÓN DE AFORO EN TIEMPO REAL
+        // SISTEMA DE MONITOREO EN TIEMPO REAL - COMEDOR UNJ
+        // CONEXIÓN CON TINKERCAD + SIMULACIÓN INTELIGENTE
         // =============================================
 
-        // Configuración del comedor
+        // Configuración del sistema
         const config = {
             capacidadMaxima: 100,
-            horarioPicoAlmuerzo: { inicio: 11, fin: 13 }, // 11 AM - 1 PM
-            horarioPicoCena: { inicio: 15, fin: 16 }      // 3 PM - 4 PM
+            urlDatos: 'datos.json',
+            intervaloActualizacion: 3000, // 3 segundos
+            modo: 'automatico' // 'automatico' o 'tinkercad'
         };
 
-        // Estado actual del sistema
+        // Estado global
         let estado = {
             aforoActual: 0,
             historico: [],
-            ultimaActualizacion: new Date(),
-            tasaEntrada: 0
+            ultimaConexion: null,
+            modoOperacion: 'simulacion'
         };
 
         // Elementos HTML
@@ -352,7 +353,9 @@
             }
         });
 
-        // Función para simular datos realistas según la hora
+        // =============================================
+        // SIMULACIÓN INTELIGENTE (CUANDO NO HAY TINKERCAD)
+        // =============================================
         function simularAforoRealista() {
             const ahora = new Date();
             const hora = ahora.getHours();
@@ -361,7 +364,7 @@
 
             let aforoBase = 0;
 
-            // Simulación basada en horarios reales del comedor
+            // Simulación basada en horarios reales del comedor UNJ
             if (horaDecimal >= 6.5 && horaDecimal <= 8.83) { // Desayuno
                 aforoBase = 20 + Math.sin((horaDecimal - 6.5) * 2) * 25;
             } else if (horaDecimal >= 11 && horaDecimal <= 14.5) { // Almuerzo beneficiarios
@@ -388,7 +391,9 @@
             return Math.max(0, Math.min(config.capacidadMaxima, Math.round(aforoBase + variacion)));
         }
 
-        // Función para calcular tiempo estimado de cola
+        // =============================================
+        // FUNCIONES DE ACTUALIZACIÓN DE INTERFAZ
+        // =============================================
         function calcularTiempoCola(aforo) {
             const porcentaje = (aforo / config.capacidadMaxima) * 100;
             
@@ -399,7 +404,6 @@
             return "15+";
         }
 
-        // Función para generar recomendación
         function generarRecomendacion(aforo) {
             const porcentaje = (aforo / config.capacidadMaxima) * 100;
             
@@ -416,13 +420,18 @@
             }
         }
 
-        // Función para actualizar la interfaz
-        function actualizarInterfaz() {
+        function actualizarInterfaz(datos) {
             const ahora = new Date();
             
-            // Simular nuevo aforo
-            estado.aforoActual = simularAforoRealista();
-            estado.ultimaActualizacion = ahora;
+            // Usar datos de Tinkercad o simulación
+            if (datos && datos.aforo !== undefined) {
+                estado.aforoActual = datos.aforo;
+                estado.modoOperacion = 'tinkercad';
+                estado.ultimaConexion = ahora;
+            } else {
+                estado.aforoActual = simularAforoRealista();
+                estado.modoOperacion = 'simulacion';
+            }
             
             // Calcular métricas
             const porcentaje = Math.round((estado.aforoActual / config.capacidadMaxima) * 100);
@@ -434,10 +443,18 @@
             elementos.aforoActual.textContent = estado.aforoActual;
             elementos.porcentajeOcupacion.textContent = `${porcentaje}%`;
             elementos.personasRestantes.textContent = disponibles;
-            elementos.tasaEntrada.textContent = `${Math.round(estado.tasaEntrada)}/h`;
+            elementos.tasaEntrada.textContent = `${Math.round(20 + Math.random() * 15)}/h`;
             elementos.tiempoCola.textContent = `⏰ Tiempo estimado de cola: ${tiempoCola} minutos`;
             elementos.recomendacion.innerHTML = recomendacion;
-            elementos.lastUpdate.textContent = `🔄 Actualizado: ${ahora.toLocaleTimeString()}`;
+            
+            // Información de conexión
+            let infoConexion = `🔄 Actualizado: ${ahora.toLocaleTimeString()}`;
+            if (estado.modoOperacion === 'tinkercad') {
+                infoConexion += ' 🔗 Conectado a Tinkercad';
+            } else {
+                infoConexion += ' 🤖 Modo simulación automática';
+            }
+            elementos.lastUpdate.textContent = infoConexion;
             
             // Actualizar badge de estado
             elementos.estadoBadge.className = 'estado-badge ';
@@ -456,10 +473,11 @@
             const horaActual = ahora.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
             estado.historico.push({
                 hora: horaActual,
-                aforo: estado.aforoActual
+                aforo: estado.aforoActual,
+                modo: estado.modoOperacion
             });
             
-            // Mantener solo últimos 20 puntos en el gráfico
+            // Mantener solo últimos 20 puntos
             if (estado.historico.length > 20) {
                 estado.historico.shift();
             }
@@ -468,24 +486,48 @@
             aforoChart.data.labels = estado.historico.map(item => item.hora);
             aforoChart.data.datasets[0].data = estado.historico.map(item => item.aforo);
             aforoChart.update();
-            
-            // Simular tasa de entrada (personas por hora)
-            estado.tasaEntrada = Math.max(0, 30 + (Math.random() - 0.5) * 20);
         }
 
-        // Inicializar sistema
+        // =============================================
+        // CONEXIÓN CON ARCHIVO DE DATOS (TINKERCAD)
+        // =============================================
+        async function cargarDatosTinkercad() {
+            try {
+                // Agregar timestamp para evitar cache
+                const url = `${config.urlDatos}?t=${Date.now()}`;
+                const respuesta = await fetch(url);
+                
+                if (respuesta.ok) {
+                    const datos = await respuesta.json();
+                    return datos;
+                }
+            } catch (error) {
+                console.log('Modo simulación: Sin conexión a Tinkercad');
+            }
+            return null;
+        }
+
+        // =============================================
+        // SISTEMA PRINCIPAL
+        // =============================================
+        async function actualizarSistema() {
+            const datosTinkercad = await cargarDatosTinkercad();
+            actualizarInterfaz(datosTinkercad);
+        }
+
         function inicializarSistema() {
             // Primera actualización inmediata
-            actualizarInterfaz();
+            actualizarSistema();
             
-            // Actualizar cada 5 segundos (simulación en tiempo real)
-            setInterval(actualizarInterfaz, 5000);
+            // Actualizar periódicamente
+            setInterval(actualizarSistema, config.intervaloActualizacion);
             
-            console.log("✅ Sistema de monitoreo Comedor UNJ - Inicializado y funcionando");
+            console.log("✅ Sistema Comedor UNJ - Inicializado");
+            console.log("📡 Modos: Tinkercad (conexión) | Simulación (automático)");
         }
 
         // Iniciar cuando la página cargue
         document.addEventListener('DOMContentLoaded', inicializarSistema);
     </script>
-</body>
+   
 </html>
