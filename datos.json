@@ -1,0 +1,11 @@
+{
+  "aforo": 0,
+  "capacidadMax": 100,
+  "porcentaje": 0,
+  "estado": "VACIO",
+  "tiempoCola": 0,
+  "disponibles": 100,
+  "entradas": 0,
+  "ultimaActualizacion": "2024-01-01T00:00:00Z",
+  "modo": "simulacion"
+}
